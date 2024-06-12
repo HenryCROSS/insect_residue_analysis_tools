@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "analysis-tools"
+version = "0.1.0"
+description = ""
+authors = ["HenryCROSS <henry583050973@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+opencv-python = "^4.10.0.82"
+pyside6 = "^6.7.1"
+pywavelets = "^1.6.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+exec = 'mypackage.mymodule:mycommand'
