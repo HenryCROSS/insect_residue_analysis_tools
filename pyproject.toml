@@ -10,6 +10,7 @@ python = ">=3.12,<3.13"
 opencv-python = "^4.10.0.82"
 pyside6 = "^6.7.1"
 pywavelets = "^1.6.0"
+matplotlib = "^3.9.0"
 
 
 [build-system]

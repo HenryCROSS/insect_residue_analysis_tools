@@ -1,3 +1,4 @@
+import sys
 from time import sleep
 import cv2
 import numpy as np
@@ -6,9 +7,11 @@ from concurrent.futures import ProcessPoolExecutor
 from cv2.typing import *
 from typing import *
 from functools import reduce
+from PySide6.QtCore import Qt, QThread, Signal, Slot, QRunnable
 
-IMG_DIR_IN: str = "./Pictures"
-IMG_DIR_OUT: str = "./Pictures_out"
+
+IMG_DIR_IN: str = "./imgs"
+IMG_DIR_OUT: str = "./imgs_out"
 IMG_UNIT = NewType("IMG_UNIT", tuple[str, MatLike])
 
 
@@ -387,8 +390,8 @@ def proc_for_white_bg(img_unit: IMG_UNIT, mask_img_unit: IMG_UNIT) -> IMG_UNIT:
       do_smoothing,
       cvt_HSV2BGR,
       cvt_BGR2GRAY,
+      revert_white_black,
       do_otsu_thresholding,
-      revert_white_black
   ]
 
   img_unit_mask = reduce(lambda img, func: func(img), new_process, img_unit)
@@ -422,7 +425,8 @@ def proc_for_multi_masks(img_unit: IMG_UNIT, mask_img_unit_list: list[Lv_Mask]) 
   output_img(IMG_DIR_OUT, img_unit_mask)
 
   img_unit_labelled = draw_overlap_transparently(img_unit, img_unit_mask, 1)
-  img_unit_labelled = draw_mask_contour(img_unit_labelled, img_unit_mask, (0, 0, 255))
+  img_unit_labelled = draw_mask_contour(
+      img_unit_labelled, img_unit_mask, (0, 0, 255))
   output_img(IMG_DIR_OUT, create_img_unit(
       f"{name}_labelled.jpg", img_unit_labelled[1]))
 
@@ -667,12 +671,25 @@ def manage_imgs(imgs: list[Img_State]) -> None:
       manage_img(current_img)
 
 
-def main():
-  # load images from IMG_DIR_IN
-  imgs = load_imgs(IMG_DIR_IN)
-  imgs = wrap_imgs(imgs)
-  print(f"loaded {len(imgs)} images!")
-  manage_imgs(imgs)
+class ImageProcessing(QRunnable):
+  def __init__(self, parent=None):
+    super(ImageProcessing, self).__init__()
+    # QThread.__init__(self, parent)
+
+  def run(self):
+    imgs = load_imgs(IMG_DIR_IN)
+    imgs = wrap_imgs(imgs)
+    print(f"loaded {len(imgs)} images!")
+    manage_imgs(imgs)
+    sys.exit(-1)
+
+
+# def main():
+#   # load images from IMG_DIR_IN
+#   imgs = load_imgs(IMG_DIR_IN)
+#   imgs = wrap_imgs(imgs)
+#   print(f"loaded {len(imgs)} images!")
+#   manage_imgs(imgs)
 
   # for img in imgs:
   #   (img_unit, mask_img_unit) = drawing(img)
@@ -686,5 +703,8 @@ def main():
   #     # waiting for each to complete, handle exceptions if needed
   #     future.result()
 
-
-main()
+if __name__ == "__main__":
+  imgs = load_imgs(IMG_DIR_IN)
+  imgs_state = wrap_imgs(imgs)
+  print(f"loaded {len(imgs_state)} images!")
+  manage_imgs(imgs_state)
