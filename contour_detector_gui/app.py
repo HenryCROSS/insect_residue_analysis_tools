@@ -102,7 +102,7 @@ class MainWindow(QMainWindow):
     self.image_list: list[Img_State] = load_imgs_path(IMG_DIR_IN)
 
     self.setWindowTitle("Draw Rectangles on Image")
-    self.setGeometry(100, 100, 1000, 600)
+    self.setGeometry(0, 0, 1000, 600)
 
     # main layout
     main_layout = QHBoxLayout()
@@ -118,6 +118,8 @@ class MainWindow(QMainWindow):
     # 模式1
     self.mode1_widget = QWidget()
     self.mode1_layout = QVBoxLayout()
+    self.mode1_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
     self.prev_button = QPushButton("Previous Image")
     self.prev_button.clicked.connect(self.show_prev_image)
     self.mode1_layout.addWidget(self.prev_button)
@@ -136,6 +138,10 @@ class MainWindow(QMainWindow):
     # 模式2
     self.mode2_widget = QWidget()
     self.mode2_layout = QVBoxLayout()
+    self.mode2_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+    label = QLabel("Priority:")
+    self.mode2_layout.addWidget(label)
 
     self.priority_slider = QSpinBox()
     self.priority_slider.setRange(0, 10000)
@@ -194,7 +200,7 @@ class MainWindow(QMainWindow):
     self.stacked_layout.setCurrentIndex(1)
     self.label.switchToEditMode()
     self.priority_slider.setValue(
-          self.image_list[self.image_index].current_priority)
+        self.image_list[self.image_index].current_priority)
     print(self.image_list[self.image_index].current_priority)
 
   def process_images(self):
@@ -202,7 +208,7 @@ class MainWindow(QMainWindow):
 
   def undo_mask(self):
     self.image_list[self.image_index].undo_mask()
-  
+
   def redo_mask(self):
     self.image_list[self.image_index].redo_mask()
 
