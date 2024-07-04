@@ -9,11 +9,17 @@ from PySide6.QtCore import Qt, QRect
 import cv2
 import os
 
-from contour_detector_gui.image_utils import Img_State, Lv_Mask, load_imgs_path
+from contour_detector_gui.image_utils import Img_State, Lv_Mask, calculate_lv_masks, create_img_unit, create_mask, draw_mask_contour, draw_overlap_transparently, load_imgs_path
 
 IMG_DIR_IN: str = "./Pictures"
 IMG_DIR_OUT: str = f"{IMG_DIR_IN}_out"
 
+def cvt_opencv2QImage(cv_img):
+  height, width, channel = cv_img.shape
+  bytes_per_line = 3 * width
+  q_image = QImage(cv_img.data, width, height,
+                    bytes_per_line, QImage.Format.Format_BGR888)
+  return q_image
 
 class ImageLabel(QLabel):
   def __init__(self, *args, **kwargs):
@@ -28,13 +34,35 @@ class ImageLabel(QLabel):
     self.img_state = image
     (img_name, cv_image) = self.img_state.get_img()
 
-    # convert openCV image to QImage
-    height, width, channel = cv_image.shape
-    bytes_per_line = 3 * width
-    q_image = QImage(cv_image.data, width, height,
-                     bytes_per_line, QImage.Format.Format_BGR888)
-    # display image
-    self.setPixmap(QPixmap.fromImage(q_image))
+    if self.is_editing:
+      if self.img_state.mask_list_size < 1:
+        # convert openCV image to QImage
+        q_image = cvt_opencv2QImage(cv_image)
+
+        # display image
+        self.setPixmap(QPixmap.fromImage(q_image))
+      else:
+        show_img_unit = self.img_state.get_img_with_mask()
+
+        (_, cv_image) = show_img_unit
+        q_image = cvt_opencv2QImage(cv_image)
+        self.setPixmap(QPixmap.fromImage(q_image))
+    else:
+      if self.img_state.after_process_img is None:
+        # convert openCV image to QImage
+        q_image = cvt_opencv2QImage(cv_image)
+
+        # display image
+        self.setPixmap(QPixmap.fromImage(q_image))
+      else:
+        # convert openCV image to QImage
+        q_image = cvt_opencv2QImage(self.img_state.after_process_img)
+
+        # display image
+        self.setPixmap(QPixmap.fromImage(q_image))
+  
+  def update_img(self):
+    self.set_image(self.img_state)
 
   def mousePressEvent(self, event):
     if event.button() == Qt.MouseButton.LeftButton and self.is_editing:
@@ -60,11 +88,11 @@ class ImageLabel(QLabel):
       start_point = (self.start_point.x(), self.start_point.y())
       end_point = (self.end_point.x(), self.end_point.y())
       self.img_state.append_mask(
-          Lv_Mask(img_size=img_shape, mask_coord=(start_point, end_point)))
-      print(self.img_state.mask_list_size)
+          create_mask(img_shape, (start_point, end_point)))
 
       self.start_point = None
       self.end_point = None
+      self.set_image(self.img_state)
       self.update()
 
   def paintEvent(self, event):
@@ -88,8 +116,12 @@ class ImageLabel(QLabel):
   def switchToViewMode(self):
     self.is_editing = False
 
+  def processImg(self):
+    self.img_state.process_img()
+
   def setPriority(self, val: int):
     self.img_state.current_priority = val
+    self.update_img()
 
 
 class MainWindow(QMainWindow):
@@ -195,22 +227,27 @@ class MainWindow(QMainWindow):
   def switch_to_view_mode(self):
     self.stacked_layout.setCurrentIndex(0)
     self.label.switchToViewMode()
+    self.update_image()
 
   def switch_to_edit_mode(self):
     self.stacked_layout.setCurrentIndex(1)
     self.label.switchToEditMode()
     self.priority_slider.setValue(
         self.image_list[self.image_index].current_priority)
-    print(self.image_list[self.image_index].current_priority)
+    self.update_image()
 
   def process_images(self):
     print("Processing images...")
+    self.label.processImg()
+    self.switch_to_view_mode()
 
   def undo_mask(self):
     self.image_list[self.image_index].undo_mask()
+    self.update_image()
 
   def redo_mask(self):
     self.image_list[self.image_index].redo_mask()
+    self.update_image()
 
 
 if __name__ == "__main__":
