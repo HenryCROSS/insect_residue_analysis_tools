@@ -13,6 +13,7 @@ pywavelets = "^1.6.0"
 matplotlib = "^3.9.0"
 
 
+scipy = "^1.14.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
