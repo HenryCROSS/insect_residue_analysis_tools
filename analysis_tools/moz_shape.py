@@ -3,6 +3,8 @@ import os
 import numpy as np
 from cv2.typing import MatLike
 from typing import Tuple, List, Optional
+import multiprocessing
+import psutil
 
 
 input_directory: str = './Pictures'
@@ -19,7 +21,6 @@ class Image:
     if self._image is None:
       input_path: str = os.path.join(self._path, self._name)
       self._image = cv2.imread(input_path)
-
     return self._image
 
   def get_path(self) -> str:
@@ -174,6 +175,14 @@ def process_image(src: Image) -> Tuple[Optional[MatLike], Optional[MatLike]]:
   return overlayed_image, mask_bgr
 
 
+def process_and_save_image(img: Image, out_dir: str) -> None:
+  overlayed_image, mask_bgr = process_image(img)
+  if overlayed_image is not None and mask_bgr is not None:
+    cv2.imwrite(f"{out_dir}/{img.get_name()}", overlayed_image)
+    cv2.imwrite(f"{out_dir}/{img.get_name()}_mask.jpg", mask_bgr)
+    print(f"Finished {out_dir}/{img.get_name()}")
+
+
 def main(in_dir: str, out_dir: str) -> None:
   if not os.path.exists(in_dir):
     print("input directory not exist")
@@ -188,12 +197,13 @@ def main(in_dir: str, out_dir: str) -> None:
     if filename.endswith((".png", ".jpg", ".jpeg")):
       images.append(Image(in_dir, filename))
 
-  for img in images:
-    overlayed_image, mask_bgr = process_image(img)
-    if overlayed_image is not None and mask_bgr is not None:
-      cv2.imwrite(f"{out_dir}/{img.get_name()}", overlayed_image)
-      cv2.imwrite(f"{out_dir}/{img.get_name()}_mask.jpg", mask_bgr)
-      print(f"Finished {out_dir}/{img.get_name()}")
+  # 计算进程数
+  mem_gb = psutil.virtual_memory().total / (1024 ** 3)
+  num_processes = int(mem_gb / 2) + 1
+
+  # 使用多进程并行处理图片
+  with multiprocessing.Pool(num_processes) as pool:
+    pool.starmap(process_and_save_image, [(img, out_dir) for img in images])
 
 
 if __name__ == "__main__":
