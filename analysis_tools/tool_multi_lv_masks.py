@@ -10,8 +10,8 @@ from functools import reduce
 from PySide6.QtCore import Qt, QThread, Signal, Slot, QRunnable
 
 
-IMG_DIR_IN: str = "./imgs"
-IMG_DIR_OUT: str = "./imgs_out"
+IMG_DIR_IN: str = "./Pictures"
+IMG_DIR_OUT: str = "./Pictures_out"
 IMG_UNIT = NewType("IMG_UNIT", tuple[str, MatLike])
 
 
@@ -106,7 +106,7 @@ def remove_noise_by_FFT(img_unit: IMG_UNIT) -> IMG_UNIT:
   mask = np.ones((rows, cols, c), np.uint8)
   # mask[crow-10:crow+10, ccol-10:ccol+10] = 0
 
-  r = 50  # radius
+  r = 25  # radius
   center = [crow, ccol]
   x, y = np.ogrid[:rows, :cols]
   mask_area = (x - center[0]) ** 2 + (y - center[1]) ** 2 <= r*r
@@ -132,6 +132,16 @@ def cvt_HSV2BGR(img_unit: IMG_UNIT) -> IMG_UNIT:
   """convert BGR to HSV for better result from image enhancement"""
   (name, img) = img_unit
   return create_img_unit(name, cv2.cvtColor(img, cv2.COLOR_HSV2BGR))
+
+
+def change_HSV_value(value: int):
+  def change_to(img_unit: IMG_UNIT) -> IMG_UNIT:
+    (name, img) = img_unit
+
+    img[:,:,2] = value
+
+    return img_unit
+  return change_to
 
 
 def cvt_BGR2GRAY(img_unit: IMG_UNIT) -> IMG_UNIT:
@@ -600,27 +610,29 @@ def manage_img(img: Img_State) -> Img_State:
     if key == 27:  # ESC # exit
       break
 
-    elif key == 119:  # w # undo mask
+    elif key == 117:  # u # undo mask
       img.undo_mask()
       print(f"undo mask, mask number {img.mask_list_size}")
 
-    elif key == 115:  # s # redo mask
+    elif key == 114:  # r # redo mask
       img.redo_mask()
       print(f"redo mask, mask number {img.mask_list_size}")
 
-    elif key == 97:  # a # lower priority
+    elif key == 108:  # l # lower priority
       img.current_priority -= 1
       print(f"priority: {img.current_priority}")
 
-    elif key == 100:  # d # higher priority
+    elif key == 104:  # h # higher priority
       img.current_priority += 1
       print(f"priority: {img.current_priority}")
 
     elif key == 32:  # Space # process image by different mask and return
       # TODO process image, save the result, return to preview mode
       if layered_masks is not None:
+        print("processing!")
         img.after_process_img = proc_for_multi_masks(
             img.img_unit, layered_masks)[1]
+        print("finish!")
       break
 
   print(f"quit edit mode for {name}")

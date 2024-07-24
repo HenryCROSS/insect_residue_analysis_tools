@@ -102,12 +102,7 @@ def find_and_remove_black_rectangles(image: MatLike, binary_image: MatLike, min_
   return binary_image
 
 
-def process_image(src: Image) -> Tuple[Optional[MatLike], Optional[MatLike]]:
-  img = src.get_img()
-  if img is None:
-    print(f"Failed to load image {src.get_full_path()}")
-    return None, None
-
+def process_image_larger_shape(img: MatLike) -> Tuple[MatLike, MatLike]:
   # deepen the colour
   block_size: int = 5
   mosaci_min: MatLike = apply_mosaic_min(img.copy(), block_size)
@@ -150,7 +145,7 @@ def process_image(src: Image) -> Tuple[Optional[MatLike], Optional[MatLike]]:
       cleaned_edges, block_size * 5)
 
   # Dilate and close to connect nearby white regions
-  kernel = np.ones((20, 20), np.uint8)
+  kernel = np.ones((15, 15), np.uint8)
   img_dilated: MatLike = cv2.dilate(final_result, kernel, iterations=1)
   img_closed: MatLike = cv2.morphologyEx(img_dilated, cv2.MORPH_CLOSE, kernel)
 
@@ -174,10 +169,49 @@ def process_image(src: Image) -> Tuple[Optional[MatLike], Optional[MatLike]]:
 
   return overlayed_image, mask_bgr
 
+def process_image_detail_shape(img: MatLike, mask: MatLike) -> Tuple[MatLike, MatLike]:
+  # 将mask转换为灰度图
+  gray_mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+    
+  # 提取mask区域内的像素
+  mask_pixels = img[gray_mask != 0]
+
+  # 找到mask区域内出现最多的颜色
+  colors, counts = np.unique(mask_pixels.reshape(-1, 3), axis=0, return_counts=True)
+  most_frequent_color = colors[counts.argmax()]
+
+  # 创建一个全白图像用于后续操作
+  new_img = img.copy()
+
+  # 将mask区域外的像素替换为出现最多的颜色
+  new_img[gray_mask == 0] = most_frequent_color
+
+  new_img = apply_mosaic_mean(new_img, 10)
+
+  # 返回处理后的图像和mask
+  return new_img, mask
+
+def process_image(src: Image) -> Tuple[Optional[MatLike], Optional[MatLike]]:
+  origianl_img = src.get_img()
+  if origianl_img is None:
+    print(f"Failed to load image {src.get_full_path()}")
+    return None, None
+  
+  large_overlayed_image, large_mask_bgr = process_image_larger_shape(origianl_img)
+  detailed_overlayed_image, detailed_mask_bgr = process_image_detail_shape(origianl_img, large_mask_bgr)
+
+  return detailed_overlayed_image, detailed_mask_bgr
+
+def calculate_area(mask: MatLike) -> float:
+  return 0.0
 
 def process_and_save_image(img: Image, out_dir: str) -> None:
   overlayed_image, mask_bgr = process_image(img)
+
+
   if overlayed_image is not None and mask_bgr is not None:
+    area = calculate_area(mask_bgr)
+    print(f"Area of {img.get_name()} = {area}")
     cv2.imwrite(f"{out_dir}/{img.get_name()}", overlayed_image)
     cv2.imwrite(f"{out_dir}/{img.get_name()}_mask.jpg", mask_bgr)
     print(f"Finished {out_dir}/{img.get_name()}")
@@ -197,11 +231,12 @@ def main(in_dir: str, out_dir: str) -> None:
     if filename.endswith((".png", ".jpg", ".jpeg")):
       images.append(Image(in_dir, filename))
 
-  # 计算进程数
+  # calculate processors number
+  # number = (RAM(GB) / 2) + 1
   mem_gb = psutil.virtual_memory().total / (1024 ** 3)
   num_processes = int(mem_gb / 2) + 1
 
-  # 使用多进程并行处理图片
+  # process images at the same time
   with multiprocessing.Pool(num_processes) as pool:
     pool.starmap(process_and_save_image, [(img, out_dir) for img in images])
 
