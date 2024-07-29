@@ -1,136 +1,113 @@
-import os
 import cv2
+import os
 import numpy as np
 
-# 从文件夹读取图片
-def read_images_from_folder(folder_path):
-    images = []
-    filenames = []
-    for filename in os.listdir(folder_path):
-        if filename.endswith(".jpg") or filename.endswith(".png"):
-            img = cv2.imread(os.path.join(folder_path, filename))
-            if img is not None:
-                images.append(img)
-                filenames.append(filename)
-    return images, filenames
+# 定义输入输出文件夹路径
+input_folder = './Pictures'
+output_folder_mosaic = './mosaic_out'
+output_folder_kmeans = './kmeans_out'
 
-# 使用FFT去掉低频信号
-def apply_fft(images):
-    processed_images = []
-    for img in images:
-        # 转换为灰度图
+# 创建输出文件夹如果它们不存在
+if not os.path.exists(output_folder_mosaic):
+    os.makedirs(output_folder_mosaic)
+
+if not os.path.exists(output_folder_kmeans):
+    os.makedirs(output_folder_kmeans)
+
+def apply_mosaic(image, block_size):
+    """
+    对图像应用马赛克效果，用块内的最小值替换。
+    
+    参数:
+    image (ndarray): 输入灰度图像。
+    block_size (int): 马赛克块的大小。
+    
+    返回:
+    mosaic_img (ndarray): 应用马赛克效果后的图像。
+    """
+    height, width = image.shape
+    mosaic_img = np.zeros_like(image)
+    
+    for y in range(0, height, block_size):
+        for x in range(0, width, block_size):
+            y_end = min(y + block_size, height)
+            x_end = min(x + block_size, width)
+            block = image[y:y_end, x:x_end]
+            min_val = np.min(block)
+            mosaic_img[y:y_end, x:x_end] = min_val
+    
+    return mosaic_img
+
+def apply_kmeans(image, k):
+    """
+    对图像应用K-means聚类算法。
+    
+    参数:
+    image (ndarray): 输入图像。
+    k (int): 聚类数。
+    
+    返回:
+    kmeans_img (ndarray): 应用K-means聚类后的图像。
+    """
+    Z = image.reshape((-1, 3))
+    Z = np.float32(Z)
+    
+    # 定义K-means的标准
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.2)
+    _, labels, centers = cv2.kmeans(Z, k, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+    
+    # 转换回8位图像
+    centers = np.uint8(centers)
+    kmeans_img = centers[labels.flatten()]
+    kmeans_img = kmeans_img.reshape((image.shape))
+    
+    return kmeans_img
+
+# 定义马赛克块的大小和K-means聚类数
+mosaic_block_size = 10  # 可以根据需要调整大小
+k_clusters = 5  # 可以根据需要调整聚类数
+
+# 处理每个图像
+for filename in os.listdir(input_folder):
+    if filename.endswith('.jpg') or filename.endswith('.png'):
+        # 构建文件路径
+        img_path = os.path.join(input_folder, filename)
+        
+        # 读取图像
+        img = cv2.imread(img_path)
+        
+        # 检查是否成功读取图像
+        if img is None:
+            print(f"Failed to read {img_path}")
+            continue
+        
+        # 转换为灰度图像
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
-        # 进行FFT
-        f = np.fft.fft2(gray)
-        fshift = np.fft.fftshift(f)
+        # 应用高斯模糊
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         
-        # 去掉低频信号（中心部分）
-        rows, cols = gray.shape
-        crow, ccol = rows // 2, cols // 2
-        mask = np.ones((rows, cols), np.uint8)
-        r = 30  # 调整这个半径以适应你的需求
-        x, y = np.ogrid[:rows, :cols]
-        mask_area = (x - crow)**2 + (y - ccol)**2 <= r*r
-        mask[mask_area] = 0
+        # 应用Laplacian算子
+        laplacian = cv2.Laplacian(blurred, cv2.CV_64F)
         
-        fshift = fshift * mask
+        # 转换Laplacian结果到8位图像
+        laplacian_8u = cv2.convertScaleAbs(laplacian)
         
-        # 进行逆FFT
-        f_ishift = np.fft.ifftshift(fshift)
-        img_back = np.fft.ifft2(f_ishift)
-        img_back = np.abs(img_back)
+        # 应用CLAHE来增强对比度
+        clahe = cv2.createCLAHE(clipLimit=40.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(laplacian_8u)
         
-        # 转换回BGR格式
-        processed_img = cv2.cvtColor(np.uint8(img_back), cv2.COLOR_GRAY2BGR)
-        processed_images.append(processed_img)
-    return processed_images
+        # 应用马赛克效果
+        mosaic_img = apply_mosaic(enhanced, mosaic_block_size)
 
-# 应用CLAHE和形态学闭操作
-def apply_clahe_and_morphology(images):
-    processed_images = []
-    for img in images:
-        # 转换为灰度图
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
-        # 应用CLAHE
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        clahe_img = clahe.apply(gray)
-        
-        # 形态学闭操作
-        kernel = np.ones((20, 20), np.uint8)
-        closed_img = cv2.morphologyEx(clahe_img, cv2.MORPH_CLOSE, kernel)
-        
-        # 形态学开操作
-        opened_img = cv2.morphologyEx(closed_img, cv2.MORPH_OPEN, kernel)
-        
-        # 转换回BGR格式
-        processed_img = cv2.cvtColor(opened_img, cv2.COLOR_GRAY2BGR)
-        processed_images.append(processed_img)
-    return processed_images
+        # 对原始图像应用K-means聚类
+        kmeans_img = apply_kmeans(img, k_clusters)
 
-# 对图像进行马赛克化处理
-def apply_mosaic(images, mosaic_size=10):
-    mosaic_images = []
-    for img in images:
-        h, w = img.shape[:2]
-        temp_img = img.copy()
+        # 保存处理后的图像
+        output_path_mosaic = os.path.join(output_folder_mosaic, filename)
+        cv2.imwrite(output_path_mosaic, mosaic_img)
 
-        # 处理每个马赛克块
-        for y in range(0, h, mosaic_size):
-            for x in range(0, w, mosaic_size):
-                roi = temp_img[y:y + mosaic_size, x:x + mosaic_size]
-                avg_color = roi.mean(axis=(0, 1)).astype(int)
-                temp_img[y:y + mosaic_size, x:x + mosaic_size] = avg_color
+        output_path_kmeans = os.path.join(output_folder_kmeans, filename)
+        cv2.imwrite(output_path_kmeans, kmeans_img)
 
-        mosaic_images.append(temp_img)
-    return mosaic_images
-
-# 对图像进行K-means聚类处理
-def apply_kmeans(images, k=6):
-    kmeans_images = []
-    for img in images:
-        Z = img.reshape((-1, 3))
-        Z = np.float32(Z)
-        
-        # 定义K-means的条件
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
-        _, labels, centers = cv2.kmeans(Z, k, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
-        
-        centers = np.uint8(centers)
-        res = centers[labels.flatten()]
-        kmeans_img = res.reshape((img.shape))
-        kmeans_images.append(kmeans_img)
-    return kmeans_images
-
-# 将处理后的图片与原图按50%比例重合
-def blend_images(original_images, processed_images, alpha=0.5):
-    blended_images = []
-    for original, processed in zip(original_images, processed_images):
-        blended = cv2.addWeighted(original, alpha, processed, 1 - alpha, 0)
-        blended_images.append(blended)
-    return blended_images
-
-# 将处理后的图片保存到另一个文件夹
-def save_images_to_folder(images, filenames, folder_path):
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
-    for img, filename in zip(images, filenames):
-        save_path = os.path.join(folder_path, filename)
-        cv2.imwrite(save_path, img)
-
-# 主函数
-def main(input_folder, output_folder, mosaic_size):
-    images, filenames = read_images_from_folder(input_folder)
-    fft_images = apply_fft(images)
-    clahe_morphology_images = apply_clahe_and_morphology(fft_images)
-    mosaic_images = apply_mosaic(clahe_morphology_images, mosaic_size)
-    kmeans_images = apply_kmeans(mosaic_images)
-    blended_images = blend_images(images, kmeans_images)
-    save_images_to_folder(kmeans_images, filenames, output_folder)
-
-if __name__ == "__main__":
-    input_folder = "./Pictures"
-    output_folder = "./laplacian_out"
-    mosaic_size = 5  # 设置马赛克的大小
-    main(input_folder, output_folder, mosaic_size)
+        print(f"Processed and saved: {output_path_mosaic} and {output_path_kmeans}")
