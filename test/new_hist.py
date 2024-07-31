@@ -106,22 +106,22 @@ def process_images(input_folder, output_folder):
 
         # 生成实心多边形
         contours, _ = cv.findContours(
-            connected_img, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+            connected_img, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
         solid_polygon_img = np.zeros_like(connected_img)
         cv.fillPoly(solid_polygon_img, contours, 255)
 
         # 去除小的圆点
         min_area = 2000  # 根据需要调整最小面积
         contours, _ = cv.findContours(
-            solid_polygon_img, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+            solid_polygon_img, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
         filtered_img = np.zeros_like(solid_polygon_img)
         for contour in contours:
-          if cv.contourArea(contour) >= min_area:
+        #   if cv.contourArea(contour) >= min_area:
             cv.drawContours(
                 filtered_img, [contour], -1, 255, thickness=cv.FILLED)
-
-        # 对检测到的区域进行FFT处理
-        # fft_region_img = apply_fft_to_region(img_color, filtered_img)
+        # Issue here
+        output_path_contour = os.path.join(output_folder, f'filtered_img_t_{filename}')
+        cv.imwrite(output_path_contour, filtered_img)
 
         # 创建透明的蓝色图层
         blue_layer = np.zeros_like(img_color)
@@ -152,10 +152,8 @@ def process_images(input_folder, output_folder):
             output_folder, f'solid_polygon_{filename}')
         output_path_filtered = os.path.join(
             output_folder, f'filtered_{filename}')
-        # output_path_dilated = os.path.join(output_folder, f'dilated_{filename}')
         output_path_contour = os.path.join(output_folder, f'contour_{filename}')
-        # output_path_fft_region = os.path.join(
-        #     output_folder, f'fft_region_{filename}')
+
 
         # 保存处理后的图像
         cv.imwrite(output_path_fft, fft_img)
@@ -167,7 +165,6 @@ def process_images(input_folder, output_folder):
         cv.imwrite(output_path_solid_polygon, solid_polygon_img)
         cv.imwrite(output_path_filtered, filtered_img)
         cv.imwrite(output_path_contour, img_color)
-        # cv.imwrite(output_path_fft_region, fft_region_img)
       else:
         print(f"Failed to read image: {input_path}")
 
