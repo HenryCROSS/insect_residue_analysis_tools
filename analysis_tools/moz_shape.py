@@ -198,9 +198,9 @@ def process_image(src: Image) -> Tuple[Optional[MatLike], Optional[MatLike]]:
     return None, None
   
   large_overlayed_image, large_mask_bgr = process_image_larger_shape(origianl_img)
-  detailed_overlayed_image, detailed_mask_bgr = process_image_detail_shape(origianl_img, large_mask_bgr)
+  # detailed_overlayed_image, detailed_mask_bgr = process_image_detail_shape(origianl_img, large_mask_bgr)
 
-  return detailed_overlayed_image, detailed_mask_bgr
+  return large_overlayed_image, large_mask_bgr
 
 def calculate_area(mask: MatLike) -> float:
   return 0.0
