@@ -1,13 +1,9 @@
-import sys
-from time import sleep
 import cv2
 import numpy as np
 import os
-from concurrent.futures import ProcessPoolExecutor
 from cv2.typing import *
 from typing import *
 from functools import reduce
-from PySide6.QtCore import Qt, QThread, Signal, Slot, QRunnable
 
 
 IMG_DIR_IN: str = "./Pictures"
@@ -808,19 +804,6 @@ def manage_imgs(imgs: list[Img_State]) -> None:
 
     elif key == 32:  # Space # process image
       manage_img(current_img)
-
-
-class ImageProcessing(QRunnable):
-  def __init__(self, parent=None):
-    super(ImageProcessing, self).__init__()
-    # QThread.__init__(self, parent)
-
-  def run(self):
-    imgs = load_imgs(IMG_DIR_IN)
-    imgs = wrap_imgs(imgs)
-    print(f"loaded {len(imgs)} images!")
-    manage_imgs(imgs)
-    sys.exit(-1)
 
 
 # def main():
