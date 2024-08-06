@@ -250,7 +250,9 @@ def do_erosion(img_unit: IMG_UNIT) -> IMG_UNIT:
   """apply erosion to remove small noise"""
   (name, img) = img_unit
   kernel = np.ones((5, 5), np.uint8)
-  return create_img_unit(name, cv2.erode(img, kernel, iterations=1))
+  image = create_img_unit(name, cv2.erode(img, kernel, iterations=1))
+  cv2.imshow("test", image[1].copy())
+  return image
 
 
 def do_dilation(img_unit: IMG_UNIT) -> IMG_UNIT:
@@ -452,7 +454,8 @@ def mask_with_shape_not(mask_img_unit: IMG_UNIT) -> Callable[[IMG_UNIT], IMG_UNI
 
 def contrast_enhancement(img_unit: IMG_UNIT) -> IMG_UNIT:
   (name, img) = img_unit
-  # control Contrast by 1.5
+
+  # control Contrast by 1
   alpha = 1
   # control brightness by 50
   beta = 50
@@ -540,6 +543,8 @@ def proc_for_multi_masks(img_unit: IMG_UNIT, mask_img_unit_list: list[Lv_Mask]) 
       result_mask = img_mask
     else:
       result_mask = cv2.bitwise_or(result_mask, img_mask)
+    
+
 
   # count white pixel
   n_white_px = np.sum(result_mask != 0)

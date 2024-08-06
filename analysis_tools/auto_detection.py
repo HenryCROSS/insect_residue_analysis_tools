@@ -114,9 +114,31 @@ def mask_with_shape(mask_img):
   return mask_it
 
 
-def do_erosion(img):
-  kernel = np.ones((5, 5), np.uint8)
-  return cv2.erode(img, kernel, iterations=1)
+def do_erosion(img: np.ndarray, kernel_size: Tuple[int, int] = (5, 5), kernel_shape: str = 'rect') -> np.ndarray:
+    """
+    Apply erosion to the input image with a customizable kernel.
+
+    Parameters:
+    - img: Input image (single channel or BGR).
+    - kernel_size: Size of the erosion kernel (width, height).
+    - kernel_shape: Shape of the erosion kernel. Options are 'rect', 'ellipse', and 'cross'.
+
+    Returns:
+    - Eroded image.
+    """
+    # Create the kernel based on the specified shape
+    if kernel_shape == 'rect':
+        kernel = np.ones(kernel_size, np.uint8)
+    elif kernel_shape == 'ellipse':
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, kernel_size)
+    elif kernel_shape == 'cross':
+        kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, kernel_size)
+    else:
+        raise ValueError("Invalid kernel_shape. Options are 'rect', 'ellipse', and 'cross'.")
+
+    # Apply erosion
+    eroded_img = cv2.erode(img, kernel, iterations=1)
+    return eroded_img
 
 
 def cvt_black2white(img):
@@ -199,7 +221,7 @@ def enhance_contrast_histogram_equalization(img: np.ndarray) -> np.ndarray:
 
 def filter_contours_by_area(image: np.ndarray, min_area: int, fill: bool = True) -> np.ndarray:
     """
-    Filter contours by area.
+    Filter contours by area but keep smaller contours within larger contours.
 
     Parameters:
     - image: Input binary image (single channel).
@@ -207,19 +229,30 @@ def filter_contours_by_area(image: np.ndarray, min_area: int, fill: bool = True)
     - fill: Whether to fill the interior of the contours. Default is True.
 
     Returns:
-    - Filtered image containing only contours with area greater than or equal to min_area.
+    - Filtered image containing only contours with area greater than or equal to min_area,
+      but also retains smaller contours within larger contours.
     """
-    # Find all external contours
-    contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Find all external contours and hierarchy
+    contours, hierarchy = cv2.findContours(image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     filtered_img = np.zeros_like(image)
+    
+    # Create a list to store the contours to keep
+    contours_to_keep = []
 
-    # Filter contours and draw them on the new image
-    for contour in contours:
-        if cv2.contourArea(contour) >= min_area:
-            if fill:
-                cv2.drawContours(filtered_img, [contour], -1, 255, thickness=cv2.FILLED)
-            else:
-                cv2.drawContours(filtered_img, [contour], -1, 255, thickness=1)
+    # Iterate through the contours and hierarchy
+    for i, contour in enumerate(contours):
+        area = cv2.contourArea(contour)
+        parent_index = hierarchy[0][i][3]
+
+        if area >= min_area or parent_index != -1:
+            contours_to_keep.append(contour)
+
+    # Draw the contours on the new image
+    for contour in contours_to_keep:
+        if fill:
+            cv2.drawContours(filtered_img, [contour], -1, 255, thickness=cv2.FILLED)
+        else:
+            cv2.drawContours(filtered_img, [contour], -1, 255, thickness=1)
 
     return filtered_img
 
@@ -229,13 +262,13 @@ def process_image_larger_shape(img):
 
 
   # mosaic_min_img = apply_mosaic_min(img, 3)
-  enhanced_img = enhance_contrast_histogram_equalization(img)
-  blurred_img = cv2.GaussianBlur(enhanced_img, (7, 7), 0)
+  blurred_img = cv2.GaussianBlur(img, (7, 7), 0)
   fft_img = remove_blur_fft(blurred_img)
 
   kernel = np.ones((3, 3), np.uint8)
   eroded_img = cv2.erode(fft_img, kernel, iterations=1)
 
+  # enhanced_img = enhance_contrast_histogram_equalization(img)
   clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
   cl1 = clahe.apply(eroded_img)
 
@@ -295,12 +328,11 @@ def generate_center_mask(img, top_pct=10.0, bottom_pct=10.0, left_pct=10.0, righ
 def detail_process_img(img, mask_img):
   new_process = [
       do_erosion,
-      # enhance_contrast_histogram_equalization,
+      enhance_contrast_histogram_equalization,
+      lambda x: apply_mosaic_min(x, 5),
       do_smoothing,
       contrast_enhancement,
-      # enhance_contrast_histogram_equalization,
       remove_noise_by_FFT,
-      # lambda x: apply_mosaic_min(x, 3),
       mask_with_shape(mask_img),
       cvt_black2white,
       cvt_BGR2HSV,
@@ -310,7 +342,7 @@ def detail_process_img(img, mask_img):
       cvt_BGR2GRAY,
       revert_white_black,
       do_otsu_thresholding,
-      # lambda x: filter_contours_by_area(x, 500, True),
+      lambda x: do_erosion(x, kernel_shape='ellipse'),
   ]
 
   img_mask = reduce(lambda img, func: func(img), new_process, img)
@@ -362,10 +394,10 @@ def process_and_save_image(image: Image, out_dir: str):
 
   result_mask = detail_process_img(img, img_mask)
 
-  img_labelled = draw_overlap_transparently(img, result_mask, 1)
-  img_labelled = draw_mask_contour(img_labelled, preprocessed_mask, (235, 32, 37), 1)
-  img_labelled = draw_mask_contour(img_labelled, result_mask, (0, 0, 255), 1)
-  img_labelled = draw_mask_contour(img_labelled, rect_mask, (0, 182, 235), 1)
+  img_labelled = draw_overlap_transparently(img, result_mask, 0.25, (0, 0, 255))
+#   img_labelled = draw_mask_contour(img_labelled, preprocessed_mask, (235, 32, 37), 2)
+  img_labelled = draw_mask_contour(img_labelled, result_mask, (0, 0, 255), 2)
+#   img_labelled = draw_mask_contour(img_labelled, rect_mask, (235, 0, 235), 2)
 
   output_path = os.path.join(out_dir, image.filename)
   cv2.imwrite(output_path, result_mask)
