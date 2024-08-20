@@ -2,6 +2,25 @@ import os
 import cv2
 import numpy as np
 
+"""_summary_
+The background image should have the same name as the folder with jpg format
+
+input folder format:
+human_output/
+|- target1/
+|  |- target1.jpg
+|  \- images....
+|
+|- target2/
+|  |- target2.jpg
+|  \- images....
+|
+|- Test/
+|  |- Test.jpg
+|  \- images....
+|
+...
+"""
 
 def read_images_from_folder(folder_path, target_image_name):
   """
