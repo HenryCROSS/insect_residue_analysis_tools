@@ -8,8 +8,15 @@ import psutil
 from functools import reduce
 import time
 
+"""_summary_
+Create Input Directory and put images inside
+
+Input Directory: ./Pictures
+Output Directory: ./Pictures_out
+"""
+
 IMG_DIR_IN: str = "./Pictures"
-IMG_DIR_OUT: str = "./Pictures_1_out"
+IMG_DIR_OUT: str = "./Pictures_out"
 CSV_FILE: str = "output_pixel_counts.csv"
 
 # Global lock for synchronization
