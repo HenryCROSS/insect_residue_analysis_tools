@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import os
 import random
+import math
 
 input_folder = './Masks'
 output_folder = './Masks_out'
@@ -33,31 +34,16 @@ def apply_mosaic_ratio(image, block_size: int, ratio: float) -> list[list[int]]:
 
 
 def find_cluster(grid: list[list[int]], pos: tuple[int, int], value: int) -> tuple[list[list[int]], list[list[int]]]:
-  """Find and extract a connected cluster from the grid starting at the given position.
-
-  Args:
-      grid (list[list[int]]): The 2D array grid.
-      pos (tuple[int, int]): The starting position (x, y).
-      value (int): The value that defines the cluster (e.g., 1 for white blocks).
-
-  Returns:
-      tuple: Updated grid with the cluster removed, and the extracted cluster as a 2D array.
-  """
   stack = [pos]
-
-  # Create a new 2D array for the cluster with the same dimensions as the grid
   cluster_grid = [[0 for _ in range(len(grid[0]))] for _ in range(len(grid))]
 
   while stack:
     x, y = stack.pop()
     if grid[x][y] == value:
-      # Mark this cell as visited by setting it to 0 (or another value)
       grid[x][y] = 0
-      # Set the corresponding cell in the cluster grid
       cluster_grid[x][y] = value
 
-      # Check neighbors (up, down, left, right, and diagonals)
-      for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (1, -1), (-1, 1), (1, 1), (-1, -1)]:
+      for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
         nx, ny = x + dx, y + dy
         if 0 <= nx < len(grid) and 0 <= ny < len(grid[0]) and grid[nx][ny] == value:
           stack.append((nx, ny))
@@ -66,15 +52,6 @@ def find_cluster(grid: list[list[int]], pos: tuple[int, int], value: int) -> tup
 
 
 def grid_clustering(grid: list[list[int]], value: int = 1) -> list[list[list[int]]]:
-  """Generate clusters based on the grid.
-
-  Args:
-      grid (list[list[int]]): 2D array with values representing clusters.
-      value (int): The value that defines the cluster (default is 1).
-
-  Returns:
-      list[list[list[int]]]: A list of clusters, where each cluster is a 2D array.
-  """
   clusters = []
 
   for i in range(len(grid)):
@@ -87,32 +64,18 @@ def grid_clustering(grid: list[list[int]], value: int = 1) -> list[list[list[int
 
 
 def image_clustering(image, clustered_grid: list[list[list[int]]], block_size: int) -> list[np.ndarray]:
-  """Generate a list of MatLike objects based on the clustered grid.
-
-  Args:
-      image: Original image.
-      clustered_grid (list[list[list[int]]]): List of clusters from grid_clustering.
-      block_size (int): Size of the block used for the grid.
-
-  Returns:
-      list[np.ndarray]: A list of images where each image corresponds to a cluster.
-  """
   (h, w) = image.shape[:2]
   cluster_images = []
 
   for cluster in clustered_grid:
-    # Create a blank image
-    cluster_image = np.zeros((h, w), dtype=image.dtype)
+    cluster_image = np.zeros((h, w), dtype=np.uint8)
 
     for i in range(len(cluster)):
       for j in range(len(cluster[0])):
         if cluster[i][j] == 1:
-          # Determine the coordinates in the original image
           y_start, y_end = i * block_size, min((i + 1) * block_size, h)
           x_start, x_end = j * block_size, min((j + 1) * block_size, w)
-          # Copy the pixels from the original image that correspond to the current cluster
-          cluster_image[y_start:y_end,
-                        x_start:x_end] = image[y_start:y_end, x_start:x_end]
+          cluster_image[y_start:y_end, x_start:x_end] = 255
 
     cluster_images.append(cluster_image)
 
@@ -120,23 +83,11 @@ def image_clustering(image, clustered_grid: list[list[list[int]]], block_size: i
 
 
 def edge_expand(image, clusters: list[list[list[int]]], block_size: int, ratio: float, distance: int) -> list[list[list[int]]]:
-  """Expand the edge of each cluster by a given distance based on a new ratio.
-
-  Args:
-      image: Original image.
-      clusters (list[list[list[int]]]): List of clusters from grid_clustering.
-      block_size (int): Size of the block used for the grid.
-      ratio (float): White pixel ratio threshold for edge expansion.
-      distance (int): Number of blocks to expand.
-
-  Returns:
-      list[list[list[int]]]: List of expanded clusters.
-  """
   (h, w) = image.shape[:2]
   expanded_clusters = []
 
   for cluster in clusters:
-    expanded_cluster = [row[:] for row in cluster]  # Deep copy the cluster
+    expanded_cluster = [row[:] for row in cluster]  # Deep copy
 
     for i in range(len(cluster)):
       for j in range(len(cluster[0])):
@@ -161,103 +112,276 @@ def edge_expand(image, clusters: list[list[list[int]]], block_size: int, ratio: 
 
 
 def combine_clusters(clusters: list[list[list[int]]], dist: int) -> list[list[list[int]]]:
-  """Combine clusters that are within a specified distance from each other.
-
-  Args:
-      clusters (list[list[list[int]]]): List of clusters.
-      dist (int): Maximum distance within which clusters should be combined.
-
-  Returns:
-      list[list[list[int]]]: List of combined clusters.
-  """
   def clusters_are_close(cluster1, cluster2, dist):
     for i in range(len(cluster1)):
       for j in range(len(cluster1[0])):
         if cluster1[i][j] == 1:
-          for di in range(-dist, dist + 1):
-            for dj in range(-dist, dist + 1):
-              ni, nj = i + di, j + dj
+          for dx in range(-dist, dist + 1):
+            for dy in range(-dist, dist + 1):
+              ni, nj = i + dx, j + dy
               if 0 <= ni < len(cluster2) and 0 <= nj < len(cluster2[0]) and cluster2[ni][nj] == 1:
                 return True
     return False
 
   combined = []
   while clusters:
-    cluster = clusters.pop(0)
-    merged = True
-    while merged:
-      merged = False
-      for i in range(len(clusters) - 1, -1, -1):
-        if clusters_are_close(cluster, clusters[i], dist):
-          # Merge clusters
-          for x in range(len(cluster)):
-            for y in range(len(cluster[0])):
-              if clusters[i][x][y] == 1:
-                cluster[x][y] = 1
-          clusters.pop(i)
-          merged = True
-    combined.append(cluster)
+    base_cluster = clusters.pop(0)
+    merge_indices = []
+    for idx, other_cluster in enumerate(clusters):
+      if clusters_are_close(base_cluster, other_cluster, dist):
+        merge_indices.append(idx)
+
+    for idx in sorted(merge_indices, reverse=True):
+      other_cluster = clusters.pop(idx)
+      for i in range(len(base_cluster)):
+        for j in range(len(base_cluster[0])):
+          if other_cluster[i][j] == 1:
+            base_cluster[i][j] = 1
+
+    combined.append(base_cluster)
 
   return combined
 
 
 def eliminate_clusters(clusters: list[list[list[int]]], smallest_cluster: int) -> list[list[list[int]]]:
-  """Eliminate clusters smaller than the specified size.
+  filtered_clusters = []
+  for cluster in clusters:
+    cluster_size = sum(sum(row) for row in cluster)
+    if cluster_size >= smallest_cluster:
+      filtered_clusters.append(cluster)
+  return filtered_clusters
+
+
+def rotating_calipers(points: np.ndarray) -> tuple:
+  hull_points = cv2.convexHull(points, returnPoints=True)
+  hull_points = hull_points.reshape(-1, 2)
+  num_points = len(hull_points)
+
+  if num_points < 2:
+    return ((None, None, 0, 0), (None, None, 0), (0, 0))
+
+  # Find diameter
+  max_length = 0
+  length_start_point = None
+  length_end_point = None
+  for i in range(num_points):
+    for j in range(i + 1, num_points):
+      pt1 = hull_points[i]
+      pt2 = hull_points[j]
+      distance = np.linalg.norm(pt1 - pt2)
+      if distance > max_length:
+        max_length = distance
+        length_start_point = tuple(pt1)
+        length_end_point = tuple(pt2)
+
+  dx = length_end_point[0] - length_start_point[0]
+  dy = length_end_point[1] - length_start_point[1]
+  angle = math.degrees(math.atan2(dy, dx))
+
+  # Minimum width
+  rect = cv2.minAreaRect(points)
+  width = min(rect[1])
+  box = cv2.boxPoints(rect)
+  box = np.intp(box)
+  width_start_point = tuple(box[0])
+  width_end_point = tuple(box[1])
+
+  # Calculate center point of the convex hull
+  center_x = np.mean(hull_points[:, 0])
+  center_y = np.mean(hull_points[:, 1])
+  center_point = (center_x, center_y)
+
+  return (
+      (length_start_point, length_end_point, max_length, angle),
+      (width_start_point, width_end_point, width),
+      center_point
+  )
+
+
+def generate_rectangle(image_shape: tuple, length_info: tuple, width_info: tuple, center_point: tuple) -> np.ndarray:
+  (height, width) = image_shape
+  mask = np.zeros((height, width), dtype=np.uint8)
+
+  if None in length_info or None in width_info:
+    return mask
+
+  # Center of the rectangle based on the calculated center point
+  center_x, center_y = center_point
+
+  rect_length = length_info[2]
+  rect_width = width_info[2]
+  angle = length_info[3]
+
+  rectangle = ((center_x, center_y), (rect_length, rect_width), angle)
+  box = cv2.boxPoints(rectangle)
+  box = np.intp(box)
+
+  cv2.drawContours(mask, [box], 0, 255, -1)
+
+  return mask
+
+
+def generate_ellipse(image_shape: tuple, length_info: tuple, width_info: tuple, center_point: tuple) -> np.ndarray:
+  (height, width) = image_shape
+  mask = np.zeros((height, width), dtype=np.uint8)
+
+  if None in length_info or None in width_info:
+    return mask
+
+  # Center of the ellipse based on the calculated center point
+  center_x, center_y = center_point
+
+  axis_length = length_info[2] / 2
+  axis_width = width_info[2] / 2
+  angle = length_info[3]
+
+  center = (int(center_x), int(center_y))
+  axes = (int(axis_length), int(axis_width))
+
+  cv2.ellipse(mask, center, axes, angle, 0, 360, 255, -1)
+
+  return mask
+
+
+def generate_triangle(image_shape: tuple, length_info: tuple, width_info: tuple, center_point: tuple) -> np.ndarray:
+  (height, width) = image_shape
+  mask = np.zeros((height, width), dtype=np.uint8)
+
+  if None in length_info or None in width_info:
+    return mask
+
+  # Use the length and width information to estimate the enclosing triangle
+  points = np.array([length_info[0], length_info[1],
+                    width_info[0], width_info[1]], dtype=np.float32)
+  ret, triangle = cv2.minEnclosingTriangle(points)
+
+  if ret:
+    triangle = np.intp(triangle).reshape(3, 2)
+
+    # Calculate translation vector based on center point
+    tri_center = np.mean(triangle, axis=0)
+    translation = np.array(center_point) - tri_center
+
+    # Translate triangle to the correct position
+    triangle += translation.astype(np.intp)
+    cv2.drawContours(mask, [triangle], 0, 255, -1)
+
+  return mask
+
+
+def calculate_iou(mask1: np.ndarray, mask2: np.ndarray) -> float:
+  intersection = np.logical_and(mask1, mask2).sum()
+  union = np.logical_or(mask1, mask2).sum()
+  if union == 0:
+    return 0.0
+  else:
+    iou = intersection / union
+    return iou
+
+
+def find_simple_shape(cluster_dimensions: list, cluster_images: list[np.ndarray], shape_generators: list) -> list[np.ndarray]:
+  best_shapes = []
+
+  for idx, (dimensions, cluster_image) in enumerate(zip(cluster_dimensions, cluster_images)):
+    image_shape = cluster_image.shape
+    length_info, width_info, center_point = dimensions
+
+    best_iou = -1
+    best_shape_mask = None
+
+    for generator in shape_generators:
+      shape_mask = generator(image_shape, length_info, width_info, center_point)
+      iou = calculate_iou(cluster_image > 0, shape_mask > 0)
+
+      if iou > best_iou:
+        best_iou = iou
+        best_shape_mask = shape_mask
+
+    best_shapes.append(best_shape_mask)
+
+  return best_shapes
+
+
+def save_raw_in_colour(image, cluster_images: list[np.ndarray], output_path: str):
+  color_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+  for cluster_image in cluster_images:
+    color = [random.randint(0, 255) for _ in range(3)]
+    mask = cluster_image > 0
+    color_image[mask] = color
+
+  cv2.imwrite(output_path, color_image)
+  print(f"Clustered image with colors saved to {output_path}")
+
+
+def save_shapes_overlay(image: np.ndarray, shape_masks: list[np.ndarray], output_path: str):
+  """Save the image with best matching shapes overlayed with transparency on top of the background and red boundaries.
 
   Args:
-      clusters (list[list[list[int]]]): List of clusters.
-      smallest_cluster (int): Minimum size of clusters to keep.
-
-  Returns:
-      list[list[list[int]]]: List of clusters that meet the size requirement.
+      image (np.ndarray): The original image.
+      shape_masks (list[np.ndarray]): List of shape masks.
+      output_path (str): Path to save the output image.
   """
-  return [cluster for cluster in clusters if np.sum(cluster) >= smallest_cluster]
+  # Convert the original grayscale image to BGR
+  color_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+  # Create an empty image to hold the overlay (transparent background)
+  overlay = np.zeros_like(color_image, dtype=np.uint8)
+
+  # Set transparency factor (alpha) for shapes
+  alpha = 0.5
+
+  for shape_mask in shape_masks:
+      # Generate a random color for the shape
+    color = [random.randint(0, 255) for _ in range(3)]
+
+    # Create a colored shape mask
+    colored_shape = np.zeros_like(color_image)
+    for i in range(3):  # Apply the color to each channel
+      colored_shape[:, :, i] = shape_mask * color[i]
+
+    # Add the colored shape mask to the overlay
+    overlay = cv2.add(colored_shape, overlay)
+
+    # Find contours of the shape mask for drawing the red boundary
+    contours, _ = cv2.findContours(
+        shape_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Draw red boundaries on the overlay
+    cv2.drawContours(overlay, contours, -1, (0, 0, 255),
+                     2)  # Red color with thickness 2
+
+  # Combine the overlay with the original image using alpha transparency
+  result_image = cv2.addWeighted(overlay, alpha, color_image, 1 - alpha, 0)
+
+  # Save the result
+  cv2.imwrite(output_path, result_image)
+  print(f"Shapes overlay image saved to {output_path}")
 
 
-def do_clustering(image, block_size: int, ratio: float, new_ratio: float, n: int, dist: int, smallest_cluster: int) -> list[np.ndarray]:
-  """Clustering algorithm with edge expansion, cluster combination, and elimination.
-
-  Args:
-      image: Input image.
-      block_size (int): Block size for mosaic.
-      ratio (float): White pixel ratio threshold.
-      new_ratio (float): New white pixel ratio threshold for edge expansion.
-      n (int): Number of blocks to expand.
-      dist (int): Maximum distance within which clusters should be combined.
-      smallest_cluster (int): Minimum size of clusters to keep.
-
-  Returns:
-      list[np.ndarray]: List of images representing each cluster.
-  """
+def do_clustering(image, block_size: int, ratio: float, new_ratio: float, n: int, dist: int, smallest_cluster: int):
   grid = apply_mosaic_ratio(image, block_size, ratio)
   clusters = grid_clustering(grid)
   expanded_clusters = edge_expand(image, clusters, block_size, new_ratio, n)
   combined_clusters_list = combine_clusters(expanded_clusters, dist)
   final_clusters = eliminate_clusters(combined_clusters_list, smallest_cluster)
   cluster_images = image_clustering(image, final_clusters, block_size)
-  return cluster_images
 
-
-def save_raw_in_colour(image, cluster_images: list[np.ndarray], output_path: str):
-  """Save the image with clusters drawn in different colors.
-
-  Args:
-      image: The original image.
-      cluster_images (list[np.ndarray]): List of cluster images.
-      output_path (str): Path to save the output image.
-  """
-  color_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-
+  cluster_dimensions = []
   for cluster_image in cluster_images:
-    # Generate a random color for the cluster
-    color = [random.randint(0, 255) for _ in range(3)]
+    points = cv2.findNonZero(cluster_image)
+    if points is not None and len(points) >= 3:
+      length_info, width_info, center_point = rotating_calipers(points)
+      cluster_dimensions.append((length_info, width_info, center_point))
+    else:
+      cluster_dimensions.append(((None, None, 0, 0), (None, None, 0), (0, 0)))
 
-    # Find the non-zero regions in the cluster image and color them
-    mask = cluster_image > 0
-    color_image[mask] = color
+  # Include triangle generator in the list of shape generators
+  shape_generators = [generate_rectangle, generate_ellipse, generate_triangle]
+  best_shape_masks = find_simple_shape(
+      cluster_dimensions, cluster_images, shape_generators)
 
-  cv2.imwrite(output_path, color_image)
-  print(f"Clustered image with colors saved to {output_path}")
+  return cluster_images, cluster_dimensions, best_shape_masks
 
 
 def main():
@@ -280,14 +404,17 @@ def main():
       print(f"Cannot read {input_image_path}, skipped")
       continue
 
-    # Perform clustering and get cluster images with edge expansion, combination, and elimination
-    cluster_images = do_clustering(
+    cluster_images, cluster_dimensions, best_shape_masks = do_clustering(
         image, block_size, ratio, new_ratio, n, dist, smallest_cluster)
 
-    # Save the original image with clusters highlighted in color
     output_image_colored_path = os.path.join(
         output_folder, f"{os.path.splitext(filename)[0]}_clusters_colored.png")
     save_raw_in_colour(image, cluster_images, output_image_colored_path)
 
+    output_shapes_path = os.path.join(
+        output_folder, f"{os.path.splitext(filename)[0]}_shapes.png")
+    save_shapes_overlay(image, best_shape_masks, output_shapes_path)
 
-main()
+
+if __name__ == "__main__":
+  main()
